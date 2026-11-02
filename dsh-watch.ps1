@@ -16,10 +16,34 @@ param(
   [switch]$Wait,
   [int]$IntervalSec = 60,
   [int]$StallMinutes = 30,
+  [string]$StallAction = '',
   [string]$LogPath = ''
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
+
+function Get-StallAction {
+  if ($StallAction) { return $StallAction }
+  $cfg = Join-Path $PSScriptRoot 'config.txt'
+  if (Test-Path $cfg) {
+    foreach ($line in (Get-Content $cfg -Encoding UTF8)) {
+      if ($line -match '^\s*卡死后动作\s*=\s*(.+)$') { return $Matches[1].Trim() }
+    }
+  }
+  return '提醒'
+}
+
+function Stop-SolveProcess {
+  # 只结束 MAPDL 批量求解进程；命令行不含 -b 的一律不动
+  $p = Get-Process ANSYS -ErrorAction SilentlyContinue
+  if (-not $p) { return '未找到 ANSYS 进程' }
+  $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)" -ErrorAction SilentlyContinue).CommandLine
+  if ($cmd -match '(^|\s)-b(\s|$)') {
+    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+    return "已结束求解进程 pid=$($p.Id)"
+  }
+  return "安全检查未通过，未结束进程（命令行不像 MAPDL 批量求解）：$cmd"
+}
 
 function Get-CandidateRoots {
   $list = New-Object System.Collections.ArrayList
@@ -166,8 +190,19 @@ if ($Wait) {
       break
     }
     if (((Get-Date) - $lastChange).TotalMinutes -ge $StallMinutes) {
-      "!! 连续 $StallMinutes 分钟无新子步，判定卡死（不自动结束进程，等用户决定）" | Out-File $LogPath -Append -Encoding UTF8
+      $act = Get-StallAction
+      "!! 连续 $StallMinutes 分钟无新子步，判定卡死（卡死后动作=$act）" | Out-File $LogPath -Append -Encoding UTF8
       $stalled = $true
+      if ($act -eq '停止求解') {
+        $r = Stop-SolveProcess
+        "   $r" | Out-File $LogPath -Append -Encoding UTF8
+      } elseif ($act -eq '退出监控') {
+        '   监控退出，求解进程保持运行' | Out-File $LogPath -Append -Encoding UTF8
+      } else {
+        '   只提醒，不结束进程，监控继续' | Out-File $LogPath -Append -Encoding UTF8
+        Start-Sleep -Seconds $IntervalSec
+        continue
+      }
       break
     }
     Start-Sleep -Seconds $IntervalSec
