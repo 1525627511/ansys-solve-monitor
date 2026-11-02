@@ -1,4 +1,4 @@
-﻿# ANSYS Solve Monitor · ANSYS 求解监控器
+# ANSYS Solve Monitor · ANSYS 求解监控器
 
 一个零依赖的 ANSYS Mechanical 求解进度监控小工具。
 A dependency-free live monitor for ANSYS Mechanical solves.
@@ -218,3 +218,49 @@ MIT
 ## 反馈 / Issues
 
 https://github.com/1525627511/ansys-solve-monitor/issues
+## 集成到 DeepSeek Harness（对话内汇报）
+
+除了独立窗口，本工具还可以把求解进度**直接汇报在 AI 对话里**。核心脚本是 `dsh-watch.ps1`（零依赖，只读）。
+
+### 1. 装成 DSH skill（一次配置，永久生效）
+
+把 `SKILL.md` 复制到 DSH 的用户技能目录：
+
+```powershell
+$dst = "$env:USERPROFILE\.dsh\skills\ansys-solve-monitor"
+New-Item -ItemType Directory -Path $dst -Force | Out-Null
+Copy-Item 'SKILL.md' $dst -Force
+```
+
+放好后 DSH 会**热加载**，技能目录里立刻出现 `ansys-solve-monitor`。之后你直接说"帮我盯着求解"，AI 就知道该读哪些文件、怎么判卡死、怎么总结结果。
+
+### 2. 手动调用（不装 skill 也能用）
+
+```powershell
+# 一帧快照
+powershell -NoProfile -ExecutionPolicy Bypass -File dsh-watch.ps1 -Snapshot
+
+# 守候到结束（每 60 秒记一行日志）
+powershell -NoProfile -ExecutionPolicy Bypass -File dsh-watch.ps1 -Wait -IntervalSec 60 -StallMinutes 30
+```
+
+快照输出：
+
+```
+[求解中] 子步 87  物理时间 8.7 / 15 s  (58%)
+  位移 412.6 mm（峰值 412.6）  塑性应变 本步 0.0031 / 峰值 0.0215  时间步 0.1
+  已耗时 61.2 分钟  平均每子步 42.1 秒
+  距上次更新 0.8 分钟
+```
+
+### 3. `-Wait` 与窗口版的分工
+
+| | `monitor.ps1`（窗口） | `dsh-watch.ps1 -Wait`（对话） |
+|---|---|---|
+| 显示 | 全屏实时刷新 | 写日志，AI 读日志汇报 |
+| 卡死 | 可红字响铃、按配置停止求解 | 只判卡死并退出，**不动进程** |
+| 适合 | 人盯着屏幕 | 挂机，让 AI 全程跟踪并在结束时给结论 |
+
+### 4. 安全边界
+
+`dsh-watch.ps1` **不会**结束 ANSYS 进程，也不会改模型或重新提交求解。卡死阈值默认 30 分钟——实测出现过单子步卡 37 分钟但最终跑完（内存换页）的情况，阈值太低会误杀两小时的计算。
