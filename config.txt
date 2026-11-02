@@ -8,8 +8,14 @@
 # 多个目录用分号隔开 / separate multiple roots with ';'
 项目根目录=
 
-# 连续多少分钟没有新子步就报警 / minutes without a new substep before warning
+# 连续多少分钟没有新子步就判定卡死 / minutes without a new substep before warning
 卡死判定分钟=12
+
+# 判定卡死之后做什么 / what to do when stalled
+#   提醒     = 只红字+响铃，继续监控（默认）
+#   退出监控 = 红字+响铃后，监控自己退出（求解继续跑，你自己去点停止）
+#   停止求解 = 红字+响铃后，直接结束 ANSYS 求解进程（该轮结果不完整，慎用）
+卡死后动作=提醒
 
 # 刷新间隔秒 / refresh interval in seconds
 刷新秒数=5

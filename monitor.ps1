@@ -23,7 +23,7 @@ $script:ScanCacheTime = [datetime]::MinValue
 
 # ================= 配置 =================
 function Get-Config {
-    $cfg = @{ Roots = @(); StallMinutes = 12; PollSeconds = 5; Beep = 'on'; AutoScan = 'on' }
+    $cfg = @{ Roots = @(); StallMinutes = 12; PollSeconds = 5; Beep = 'on'; AutoScan = 'on'; StallAction = '提醒' }
     if (Test-Path $script:CfgFile) {
         foreach ($line in (Get-Content $script:CfgFile -Encoding UTF8 -ErrorAction SilentlyContinue)) {
             if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
@@ -37,6 +37,7 @@ function Get-Config {
                 '^(刷新秒数|PollSeconds)$'             { $cfg.PollSeconds = [int]$v }
                 '^(提示音|Beep)$'                      { $cfg.Beep = $v.ToLower() }
                 '^(自动扫描|AutoScan)$'                { $cfg.AutoScan = $v.ToLower() }
+                '^(卡死后动作|StallAction)$'            { $cfg.StallAction = $v }
             }
         }
     }
@@ -241,6 +242,7 @@ $runStart = $null
 $avgStepSec = $null
 $finished = $false
 $quitByUser = $false
+$stallExit = $false
 $exitCode = 0
 
 while ($true) {
@@ -346,8 +348,33 @@ while ($true) {
     if ($proc.Count -gt 0 -and $stallMin -ge $cfg.StallMinutes) {
         Write-Host ''
         Write-Host ("  !! 已经 {0} 分钟没有新子步，可能卡住或已发散" -f $stallMin) -ForegroundColor Red
-        Write-Host '     建议：先看 file.err；确实卡死再到 GUI 里点「停止求解」' -ForegroundColor Red
-        if ($cfg.Beep -eq 'on') { try { [console]::Beep(880, 300) } catch { } }
+        switch ($cfg.StallAction) {
+            '停止求解' { Write-Host '     按配置：正在结束求解进程（卡死后动作=停止求解）' -ForegroundColor Red }
+            '退出监控' { Write-Host '     按配置：监控即将退出，求解不会被停止（卡死后动作=退出监控）' -ForegroundColor Red }
+            default     { Write-Host '     建议：先看 file.err；确实卡死再到 GUI 里点「停止求解」' -ForegroundColor Red }
+        }
+        if ($cfg.Beep -eq 'on') { try { [console]::Beep(880, 300); [console]::Beep(660, 300) } catch { } }
+
+        if ($cfg.StallAction -eq '停止求解') {
+            $target = $proc[0]
+            $cmd = ''
+            try { $cmd = (Get-CimInstance Win32_Process -Filter ("ProcessId=" + $target.Id)).CommandLine } catch { }
+            ("卡死判停：pid={0} 命令={1}" -f $target.Id, $cmd) | Out-File -FilePath $script:LogFile -Append -Encoding UTF8
+            if ($cmd -match 'ANSYS\.EXE' -and $cmd -match '\s-b\s') {
+                try {
+                    Stop-Process -Id $target.Id -Force -ErrorAction Stop
+                    Write-Host '     已结束求解进程（该轮结果不完整）' -ForegroundColor Red
+                } catch {
+                    Write-Host ("     结束失败: {0}" -f $_.Exception.Message) -ForegroundColor Red
+                }
+            } else {
+                Write-Host '     安全检查未通过，未结束进程（命令行不像 MAPDL 批量求解）' -ForegroundColor Yellow
+            }
+            $stallExit = $true; $exitCode = 3; $finished = $true
+        }
+        elseif ($cfg.StallAction -eq '退出监控') {
+            $stallExit = $true; $exitCode = 2; $finished = $true
+        }
     }
     elseif ($proc.Count -gt 0) {
         Write-Host ("  距上个新子步 {0} 分钟（正常）" -f $stallMin) -ForegroundColor DarkGray
@@ -372,7 +399,11 @@ while ($true) {
     if ($finished) { break }
 }
 
-if ($finished -and -not $Once -and -not $quitByUser) {
+if ($stallExit) {
+    Write-Host ''
+    Write-Host '  监控已按「卡死后动作」退出。' -ForegroundColor Yellow
+}
+elseif ($finished -and -not $Once -and -not $quitByUser) {
     Start-Sleep -Seconds 15
     $art = Find-Artifacts -Roots $roots
     Clear-Host
