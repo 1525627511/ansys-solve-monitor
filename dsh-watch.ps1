@@ -17,6 +17,7 @@ param(
   [int]$IntervalSec = 60,
   [int]$StallMinutes = 30,
   [string]$StallAction = '',
+  [int]$GraceMinutes = 0,
   [string]$LogPath = ''
 )
 
@@ -31,6 +32,26 @@ function Get-StallAction {
     }
   }
   return '提醒'
+}
+
+function Get-GraceMinutes {
+  if ($GraceMinutes -gt 0) { return $GraceMinutes }
+  $cfg = Join-Path $PSScriptRoot 'config.txt'
+  if (Test-Path $cfg) {
+    foreach ($line in (Get-Content $cfg -Encoding UTF8)) {
+      if ($line -match '^\s*宽限分钟\s*=\s*(\d+)') { return [int]$Matches[1] }
+    }
+  }
+  return 5
+}
+
+function Get-MntrPath {
+  param($SolveDir)
+  $scr = Get-LatestScratch $SolveDir
+  if ($scr) { $c = Join-Path $scr.FullName 'file.mntr'; if (Test-Path $c) { return $c } }
+  $c = Join-Path $SolveDir.Mech 'file.mntr'
+  if (Test-Path $c) { return $c }
+  return $null
 }
 
 function Stop-SolveProcess {
@@ -193,6 +214,32 @@ if ($Wait) {
       $act = Get-StallAction
       "!! 连续 $StallMinutes 分钟无新子步，判定卡死（卡死后动作=$act）" | Out-File $LogPath -Append -Encoding UTF8
       $stalled = $true
+      if ($act -eq '提醒后停止') {
+        $mp = Get-MntrPath $solveDir
+        $stamp = if ($mp) { (Get-Item -LiteralPath $mp).LastWriteTime } else { $null }
+        for ($i = 1; $i -le 3; $i++) {
+          "     !! 卡住 !! 第 $i/3 次播报" | Out-File $LogPath -Append -Encoding UTF8
+          try { [console]::Beep(880, 400) } catch { }
+          Start-Sleep -Seconds 3
+        }
+        $grace = Get-GraceMinutes
+        $endAt = (Get-Date).AddMinutes($grace)
+        $cancelled = $false
+        while ((Get-Date) -lt $endAt) {
+          $left = [int][math]::Ceiling(($endAt - (Get-Date)).TotalSeconds)
+          "     $left 秒后自动结束求解（想保留就 kill 掉本监控或回复我）" | Out-File $LogPath -Append -Encoding UTF8
+          if ($mp -and (Get-Item -LiteralPath $mp).LastWriteTime -gt $stamp) { $cancelled = $true; break }
+          Start-Sleep -Seconds 5
+        }
+        if ($cancelled) {
+          "     子步已恢复，取消停止" | Out-File $LogPath -Append -Encoding UTF8
+          $stalled = $false
+          continue
+        }
+        $r = Stop-SolveProcess
+        "     $r" | Out-File $LogPath -Append -Encoding UTF8
+        break
+      }
       if ($act -eq '停止求解') {
         $r = Stop-SolveProcess
         "   $r" | Out-File $LogPath -Append -Encoding UTF8

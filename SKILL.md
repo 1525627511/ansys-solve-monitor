@@ -1,4 +1,4 @@
----
+﻿---
 name: ansys-solve-monitor
 description: Use when the user starts or is about to start an ANSYS Workbench/Mechanical solve and wants progress reported in the chat instead of a separate window, or asks "求解到哪了 / 有没有卡住 / 跑完了吗 / 帮我盯着求解". Reads file.mntr + solve.out + ds.dat to report substep, time, displacement, plasticity, stall, and the final verdict, without touching the model or the solve.
 ---
@@ -34,7 +34,7 @@ description: Use when the user starts or is about to start an ANSYS Workbench/Me
 |---|---|---|
 | `求解中` + 距上次更新 < 5 分钟 | 正常推进 | 只报进度 |
 | 距上次更新 > 15 分钟且子步没变 | 可能卡住（换页/分解慢） | 提高警惕，继续观察；不要立刻下结论 |
-| 距上次更新 > 30 分钟且子步没变 | 判卡死 | 汇报给用户，**由用户决定**是否停止 |
+| 距上次更新 > 40 分钟且子步没变 | 判卡死 | 脚本按 `卡死后动作` 处理：播报三遍 → 宽限 5 分钟 → 无操作则停止 |
 | `未检测到 ANSYS 求解进程` + 结论 `RUN COMPLETED` | 已算完 | 给结果总结 |
 | 结论含 `REASON FOR TERMINATION` | 求解失败 | 读 `solve.out` 末尾定位原因 |
 
@@ -48,10 +48,10 @@ description: Use when the user starts or is about to start an ANSYS Workbench/Me
 
 - 每 60 秒往 `dsh_watch_<时间戳>.log` 追加一行；进程退出或判定卡死时打印总结。
 - 用 **后台作业**（`run_in_background`）启动它，期间可以继续做别的事，任务结束时会收到通知。
-- 卡死后行为由 `config.txt` 的 `卡死后动作` 决定，也可用 `-StallAction` 覆盖：
-  - `提醒`（默认安全值）：只写日志，监控继续
+- 卡死后行为由 `config.txt` 的 `卡死后动作` 决定（默认 `提醒后停止`），也可用 `-StallAction` 覆盖：
+  - `提醒`：只写日志，监控继续
   - `退出监控`：记一行后自己退出，求解不动
-  - `停止求解`：**结束 MAPDL 进程**（先校验命令行含 `-b`，否则拒绝）
+  - `提醒后停止`（默认）：播报「卡住」三遍 → 宽限 `宽限分钟`（默认 5）→ 期间子步恢复或用户取消就继续，否则**结束 MAPDL 进程**（校验命令行含 `-b`，否则拒绝）`r`n  - `停止求解`：立即结束，不宽限
 
 ## 完成后的结果总结（用户要看的是结论）
 
@@ -86,5 +86,5 @@ cmd /c mklink /J "D:\awbtmp\mech" "<项目>_files\dp0\SYS\MECH"
 
 - **停止求解要有依据**：只有 `卡死后动作=停止求解`、或用户当场明确说"停"，才结束进程。结束前必须校验进程命令行含 `-b`（MAPDL 批量求解），否则只报告不动手。
 - **不改模型、不重新提交求解**。监控只读。
-- 卡死阈值默认 **30 分钟**：实测出现过单子步卡 37 分钟但最终跑完的情况（内存换页），阈值定太低会误杀。
+- 卡死阈值默认 **40 分钟**：实测出现过单子步卡 37 分钟但最终跑完的情况（内存换页），阈值定太低会误杀。
 - 判定"在算"而不是"卡住"的依据：ANSYS 进程 CPU 时间在涨 + `file.mntr` 有新行 + `file.stat` 的 `Solver iteration` 在变。

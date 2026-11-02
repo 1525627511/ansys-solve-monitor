@@ -23,7 +23,7 @@ $script:ScanCacheTime = [datetime]::MinValue
 
 # ================= 配置 =================
 function Get-Config {
-    $cfg = @{ Roots = @(); StallMinutes = 12; PollSeconds = 5; Beep = 'on'; AutoScan = 'on'; StallAction = '提醒' }
+    $cfg = @{ Roots = @(); StallMinutes = 40; PollSeconds = 5; Beep = 'on'; AutoScan = 'on'; StallAction = '提醒后停止'; GraceMinutes = 5 }
     if (Test-Path $script:CfgFile) {
         foreach ($line in (Get-Content $script:CfgFile -Encoding UTF8 -ErrorAction SilentlyContinue)) {
             if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
@@ -34,6 +34,7 @@ function Get-Config {
             switch -Regex ($k) {
                 '^(项目根目录|ProjectRoot)$'          { $cfg.Roots += ($v -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
                 '^(卡死判定分钟|StallMinutes)$'        { $cfg.StallMinutes = [int]$v }
+                '^(宽限分钟|GraceMinutes)$'           { $cfg.GraceMinutes = [int]$v }
                 '^(刷新秒数|PollSeconds)$'             { $cfg.PollSeconds = [int]$v }
                 '^(提示音|Beep)$'                      { $cfg.Beep = $v.ToLower() }
                 '^(自动扫描|AutoScan)$'                { $cfg.AutoScan = $v.ToLower() }
@@ -351,11 +352,52 @@ while ($true) {
         switch ($cfg.StallAction) {
             '停止求解' { Write-Host '     按配置：正在结束求解进程（卡死后动作=停止求解）' -ForegroundColor Red }
             '退出监控' { Write-Host '     按配置：监控即将退出，求解不会被停止（卡死后动作=退出监控）' -ForegroundColor Red }
+            '提醒后停止' { Write-Host ('     按配置：先播报三遍，{0} 分钟内无操作就结束求解（卡死后动作=提醒后停止）' -f $cfg.GraceMinutes) -ForegroundColor Red }
             default     { Write-Host '     建议：先看 file.err；确实卡死再到 GUI 里点「停止求解」' -ForegroundColor Red }
         }
         if ($cfg.Beep -eq 'on') { try { [console]::Beep(880, 300); [console]::Beep(660, 300) } catch { } }
 
-        if ($cfg.StallAction -eq '停止求解') {
+        if ($cfg.StallAction -eq '提醒后停止') {
+            $stallAt = Get-Date
+            $mntrPaths = @()
+            $filesRoot = Split-Path (Split-Path (Split-Path $art.Dir -Parent) -Parent) -Parent
+            if (Test-Path $filesRoot) {
+                $mntrPaths = Get-ChildItem -LiteralPath $filesRoot -Filter 'file.mntr' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+            }
+            $mntrStamp = @{}
+            foreach ($mp in $mntrPaths) { $mntrStamp[$mp] = (Get-Item -LiteralPath $mp).LastWriteTime }
+
+            for ($i = 1; $i -le 3; $i++) {
+                Write-Host ("     !! 卡住 !! 第 {0}/3 次播报" -f $i) -ForegroundColor Red
+                if ($cfg.Beep -eq 'on') { try { [console]::Beep(880, 400) } catch { } }
+                Start-Sleep -Seconds 3
+            }
+
+            $graceEnd = (Get-Date).AddMinutes($cfg.GraceMinutes)
+            $cancelled = $false
+            while ((Get-Date) -lt $graceEnd) {
+                $left = [int][math]::Ceiling(($graceEnd - (Get-Date)).TotalSeconds)
+                Write-Host ("     等待确认 {0} 秒后自动结束求解（按任意键取消）" -f $left) -ForegroundColor Yellow
+                $hasKey = $false
+                try { $hasKey = [Console]::KeyAvailable } catch { $hasKey = $false }
+                if ($hasKey) { try { $null = [Console]::ReadKey($true) } catch { }; $cancelled = $true; break }
+                foreach ($mp in $mntrPaths) {
+                    if ((Get-Item -LiteralPath $mp).LastWriteTime -gt $mntrStamp[$mp]) { $cancelled = $true; break }
+                }
+                if ($cancelled) { break }
+                Start-Sleep -Seconds 5
+            }
+            if ($cancelled) {
+                Write-Host '     已取消：求解仍在推进，监控继续' -ForegroundColor Green
+                ("{0} 卡住提醒已取消（用户按键或子步恢复）" -f (Get-Date -Format 'HH:mm:ss')) | Out-File -FilePath $script:LogFile -Append -Encoding UTF8
+            } else {
+                Write-Host '     宽限期内无操作，按配置结束求解' -ForegroundColor Red
+            }
+            $doStop = -not $cancelled
+        }
+        else { $doStop = ($cfg.StallAction -eq '停止求解') }
+
+        if ($doStop) {
             $target = $proc[0]
             $cmd = ''
             try { $cmd = (Get-CimInstance Win32_Process -Filter ("ProcessId=" + $target.Id)).CommandLine } catch { }

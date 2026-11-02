@@ -1,27 +1,25 @@
-# ============================================================
-#  ANSYS Solve Monitor - configuration
-#  改完保存，重新启动监控即可生效 / edit, save, restart
-# ============================================================
-
+﻿# ANSYS 求解监控配置 / config
 # 工程根目录（含 *_files 的那一层）。留空 = 自动扫描。
-# Project root (the folder that contains *_files). Empty = auto-scan.
-# 多个目录用分号隔开 / separate multiple roots with ';'
 项目根目录=
 
 # 连续多少分钟没有新子步就判定卡死 / minutes without a new substep before warning
-卡死判定分钟=30
+卡死判定分钟=40
 
 # 判定卡死之后做什么 / what to do when stalled
-#   提醒     = 只红字+响铃，继续监控（默认）
-#   退出监控 = 红字+响铃后，监控自己退出（求解继续跑，你自己去点停止）
-#   停止求解 = 红字+响铃后，直接结束 ANSYS 求解进程（该轮结果不完整，慎用）
-卡死后动作=停止求解
+#   提醒        只报警，监控继续
+#   退出监控     报警后监控自己退出，求解不动
+#   提醒后停止    先播报三遍，宽限期内无操作就结束求解
+#   停止求解     立即结束求解
+卡死后动作=提醒后停止
 
-# 刷新间隔秒 / refresh interval in seconds
+# 卡死后动作=提醒后停止 时，等多少分钟才真正结束 / grace minutes before stopping
+宽限分钟=5
+
+# 刷新间隔（秒）
 刷新秒数=5
 
-# 结束时响铃 on/off / beep on finish
+# 提示音 on/off
 提示音=on
 
-# 找不到工程时是否全盘扫描 on/off / scan all drives when root is unknown
+# 自动扫描磁盘找 *_files（on/off）
 自动扫描=on
