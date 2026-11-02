@@ -1,0 +1,12 @@
+﻿# 运行日志
+monitor_*.log
+监控日志_*.log
+
+# 系统文件
+Thumbs.db
+desktop.ini
+~$*
+
+# 临时
+*.tmp
+*.bak

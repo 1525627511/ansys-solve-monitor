@@ -1,0 +1,21 @@
+# ============================================================
+#  ANSYS Solve Monitor - configuration
+#  改完保存，重新启动监控即可生效 / edit, save, restart
+# ============================================================
+
+# 工程根目录（含 *_files 的那一层）。留空 = 自动扫描。
+# Project root (the folder that contains *_files). Empty = auto-scan.
+# 多个目录用分号隔开 / separate multiple roots with ';'
+项目根目录=
+
+# 连续多少分钟没有新子步就报警 / minutes without a new substep before warning
+卡死判定分钟=12
+
+# 刷新间隔秒 / refresh interval in seconds
+刷新秒数=5
+
+# 结束时响铃 on/off / beep on finish
+提示音=on
+
+# 找不到工程时是否全盘扫描 on/off / scan all drives when root is unknown
+自动扫描=on
