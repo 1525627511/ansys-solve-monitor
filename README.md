@@ -193,3 +193,9 @@ ansys-solve-monitor/
 ## License
 
 MIT
+
+---
+
+## 反馈 / Issues
+
+https://github.com/1525627511/ansys-solve-monitor/issues
