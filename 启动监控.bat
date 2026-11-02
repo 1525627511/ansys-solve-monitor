@@ -3,7 +3,7 @@ chcp 65001 >nul
 title ANSYS Solve Monitor
 cd /d "%~dp0"
 
-rem 支持把 .wbpj 文件直接拖到本 bat 上，用它所在的目录作为工程目录
+rem Drag a .wbpj onto this file to use its folder as the project root.
 if "%~1"=="" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0monitor.ps1"
 ) else (
